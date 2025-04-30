@@ -1,0 +1,301 @@
+
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { getVoteCounts, AllVoteCounts, forceDataReload, subscribeToVoteCounts } from '@/utils/votingUtils';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
+
+// Candidate information for display
+const candidateInfo = {
+  "pres_01": { name: "Sophiya Sharma", country: "Nepal", course: "BBA" },
+  "pres_02": { name: "Muhammed Lamin Jabbi", country: "Gambia", course: "MBA" },
+  "vp_01": { name: "Yak Majok", country: "South Sudan", course: "B-Tech CSE" },
+  "vp_02": { name: "Ibrahim Hafez", country: "Syria", course: "B-Tech CSE" },
+  "vp_03": { name: "Hrishita Rauniyar", country: "Nepal", course: "MBA" },
+  "gs_01": { name: "Malinga Aaron", country: "Uganda", course: "B-Tech Civil Engineering" },
+  "gs_02": { name: "Kusum Patel", country: "Nepal", course: "BBA" },
+  "sw_01": { name: "Sylvester Mbah", country: "Cameroon", course: "B-Tech Mechanical Engineering" },
+  "sw_02": { name: "Elsa Farhan Agung", country: "Indonesia", course: "BBA" },
+};
+
+// Position titles for display
+const positionTitles = {
+  president: "President",
+  vicePresident: "Vice President",
+  generalSecretary: "General Secretary",
+  sportsWelfare: "Sports & Welfare"
+};
+
+// Chart colors
+const COLORS = ['#1a56db', '#0ea5e9', '#38bdf8', '#7dd3fc', '#d4af37'];
+
+const Results = () => {
+  const [voteCounts, setVoteCounts] = useState<AllVoteCounts>({
+    president: {},
+    vicePresident: {},
+    generalSecretary: {},
+    sportsWelfare: {}
+  });
+  const [lastRefresh, setLastRefresh] = useState<number>(Date.now());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isMobile = useIsMobile();
+  const { toast } = useToast();
+  
+  // Load initial vote counts and set up real-time listener
+  useEffect(() => {
+    console.log("Setting up real-time vote listeners");
+    setIsRefreshing(true);
+    
+    // Initial data load
+    const loadInitialData = async () => {
+      try {
+        // Force a data reload first to ensure we get the latest data
+        await forceDataReload();
+        const counts = await getVoteCounts();
+        console.log("Initial vote counts loaded:", counts);
+        setVoteCounts(counts);
+        setLastRefresh(Date.now());
+      } catch (error) {
+        console.error("Error loading initial vote counts:", error);
+        toast({
+          title: "Error loading results",
+          description: "Please try refreshing the page",
+          variant: "destructive"
+        });
+      } finally {
+        setIsRefreshing(false);
+      }
+    };
+    
+    loadInitialData();
+    
+    // Set up real-time listener with immediate callback to ensure data is displayed
+    const unsubscribe = subscribeToVoteCounts((newCounts) => {
+      console.log("Received real-time vote update:", newCounts);
+      // Deep clone to ensure we trigger a re-render
+      setVoteCounts(JSON.parse(JSON.stringify(newCounts)));
+      setLastRefresh(Date.now());
+    });
+    
+    // Additional refresh on focus
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log("Tab is now visible - refreshing data");
+        handleManualRefresh(false);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // More frequent refresh interval
+    const refreshInterval = setInterval(() => {
+      console.log("Auto-refreshing data");
+      handleManualRefresh(false);
+    }, isMobile ? 3000 : 5000);  // More frequent refresh, especially on mobile
+    
+    // Clean up listeners on unmount
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(refreshInterval);
+      console.log("Cleaned up vote listeners and intervals");
+    };
+  }, [toast, isMobile]);
+  
+  // Manual refresh handler with immediate feedback
+  const handleManualRefresh = async (showToast = true) => {
+    setIsRefreshing(true);
+    try {
+      console.log("Manual refresh triggered");
+      await forceDataReload();
+      
+      // Add small delay to ensure Firebase has time to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const counts = await getVoteCounts();
+      console.log("Manual refresh results:", counts);
+      
+      setVoteCounts({...counts});
+      setLastRefresh(Date.now());
+      
+      if (showToast) {
+        toast({
+          title: "Results refreshed",
+          description: "Latest voting data loaded"
+        });
+      }
+    } catch (error) {
+      console.error("Error during manual refresh:", error);
+      if (showToast) {
+        toast({
+          title: "Refresh failed",
+          description: "Please try again",
+          variant: "destructive"
+        });
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+  
+  // Calculate total votes for a position
+  const getTotalVotes = (position: keyof AllVoteCounts) => {
+    return Object.values(voteCounts[position]).reduce((sum, count) => sum + count, 0);
+  };
+  
+  // Format data for pie chart
+  const formatChartData = (position: keyof AllVoteCounts) => {
+    return Object.entries(voteCounts[position]).map(([candidateId, votes]) => ({
+      name: (candidateInfo as any)[candidateId]?.name || candidateId,
+      value: votes
+    }));
+  };
+  
+  // Check if we have any votes for any position
+  const hasAnyVotes = Object.keys(voteCounts).some(pos => 
+    Object.keys(voteCounts[pos as keyof AllVoteCounts]).length > 0
+  );
+
+  console.log("Current vote counts:", voteCounts);
+  console.log("Has any votes:", hasAnyVotes);
+  
+  return (
+    <>
+      <div className="bg-election-light py-8">
+        <div className="election-container">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-election-dark">Election Results</h1>
+              <p className="text-gray-600 mt-2 flex items-center flex-wrap">
+                <span>Live results updated in real-time.</span> 
+                <span className="ml-2">
+                  Last refreshed: {new Date(lastRefresh).toLocaleTimeString()}
+                </span>
+                {isRefreshing && (
+                  <span className="ml-2 inline-flex items-center text-election-primary">
+                    <RefreshCw className="h-3 w-3 animate-spin mr-1" /> Updating...
+                  </span>
+                )}
+              </p>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="flex items-center gap-1"
+              onClick={() => handleManualRefresh()}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="election-container py-8">
+        {!hasAnyVotes && (
+          <Card className="mb-8 p-6 text-center">
+            <p className="text-gray-500">No votes have been recorded yet. Be the first to vote!</p>
+            <Button 
+              variant="default" 
+              className="mt-4"
+              onClick={() => window.location.href = '/vote'}
+            >
+              Go to Voting Page
+            </Button>
+          </Card>
+        )}
+        
+        <div className="grid grid-cols-1 gap-8">
+          {(Object.keys(positionTitles) as Array<keyof typeof positionTitles>).map((position) => {
+            const totalVotes = getTotalVotes(position);
+            const chartData = formatChartData(position);
+            
+            return (
+              <Card key={position} className="overflow-hidden">
+                <CardHeader className="bg-election-light">
+                  <CardTitle>{positionTitles[position]} Results</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="grid md:grid-cols-2 gap-8">
+                    <div className="space-y-6">
+                      {Object.entries(voteCounts[position]).length > 0 ? (
+                        <>
+                          {Object.entries(voteCounts[position]).map(([candidateId, votes]) => {
+                            const percent = totalVotes ? Math.round((votes / totalVotes) * 100) : 0;
+                            const candidate = (candidateInfo as any)[candidateId];
+                            
+                            return (
+                              <div key={candidateId} className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <h3 className="font-medium">{candidate?.name || candidateId}</h3>
+                                    <p className="text-sm text-gray-500">
+                                      {candidate?.country} • {candidate?.course}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="font-bold text-election-primary">{votes}</span>
+                                    <span className="text-gray-500 ml-1">({percent}%)</span>
+                                  </div>
+                                </div>
+                                <Progress value={percent} className="h-2" />
+                              </div>
+                            );
+                          })}
+                          
+                          <div className="text-sm text-gray-500 pt-2">
+                            Total votes: {totalVotes}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="py-8 text-center text-gray-500">
+                          No votes recorded for this position yet
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="h-64">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={chartData}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            >
+                              {chartData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center">
+                          <p className="text-gray-500">No votes recorded yet</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Results;
