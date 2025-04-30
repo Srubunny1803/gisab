@@ -41,7 +41,7 @@ const authorizedEmails: string[] = [
   "eagung@gitam.in",
   "ashehuu@gitam.in",
   "cmunenge@gitam.in",
-  "ssharma12@student.gitam.edu", // Fixed domain from gitam.in
+  "ssharma12@gitam.in", // Fixed domain from gitam.in
   "psalumu@student.gitam.edu", // Fixed domain from gitam.in
   "ryadav6@student.gitam.edu", // Fixed domain from gitam.in
   "rsimoni@student.gitam.edu", // Fixed domain from gitam.in
